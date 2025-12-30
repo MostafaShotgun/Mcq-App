@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <title>MCQ App</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --success: #16a34a;
+            --danger: #dc2626;
+            --bg: #f8fafc;
+            --card-bg: #ffffff;
+            --text: #1e293b;
+            --border: #e2e8f0;
+        }
+
+        [data-theme="dark"] {
+            --bg: #0f172a;
+            --card-bg: #1e293b;
+            --text: #f1f5f9;
+            --border: #334155;
+        }
+
+        * { box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; transition: background 0.3s; }
+        body { background-color: var(--bg); margin: 0; padding: 20px; color: var(--text); overflow-x: hidden; }
+        .container { max-width: 900px; margin: 0 auto; }
+
+        /* تأثير الظهور (Fade-in) */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .fade-in { animation: fadeIn 0.6s ease forwards; }
+
+        .card {
+            background: var(--card-bg);
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+            border: 2px solid var(--border);
+            border-right: 8px solid var(--border);
+            transition: all 0.3s ease;
+        }
+
+        /* تنسيق السؤال المجاب عليه */
+        .card.is-answered {
+            border-color: var(--primary) !important;
+            border-right: 8px solid var(--primary) !important;
+            background-color: rgba(37, 99, 235, 0.08) !important;
+        }
+
+        .card.correct { border-color: var(--success) !important; background: rgba(22, 163, 74, 0.1) !important; }
+        .card.wrong { border-color: var(--danger) !important; background: rgba(220, 38, 38, 0.1) !important; }
+
+        header {
+            position: sticky; top: 0; z-index: 100;
+            background: var(--card-bg);
+            padding: 15px; border-bottom: 3px solid var(--primary);
+            display: flex; justify-content: space-between; align-items: center; border-radius: 0 0 10px 10px;
+        }
+
+        .choice-item {
+            display: flex; align-items: center; padding: 12px;
+            border: 1px solid var(--border); border-radius: 8px; cursor: pointer; margin-top: 8px;
+        }
+        .choice-item:hover { background: rgba(37, 99, 235, 0.05); }
+
+        .btn-primary { background: var(--primary); color: white; border: none; padding: 12px; border-radius: 8px; font-weight: 600; cursor: pointer; width: 100%; }
+        .btn-outline { background: transparent; border: 2px solid var(--primary); color: var(--primary); padding: 10px; border-radius: 8px; cursor: pointer; margin-top: 10px; width: 100%; }
+        .hidden { display: none !important; }
+
+        #history-modal {
+            display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+            z-index: 1000; align-items: center; justify-content: center;
+        }
+        .modal-content { background: var(--card-bg); width: 90%; max-width: 600px; padding: 25px; border-radius: 15px; position: relative; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
+        <button onclick="toggleTheme()" style="background:none; border:none; font-size: 1.5rem; cursor:pointer;">🌓</button>
+    </div>
+
+    <div id="setup-view" class="card fade-in">
+        <h1 style="text-align: center; color: var(--primary);">امتحان المسئولية التقصيرية</h1>
+        <div style="margin: 20px 0;">
+            <label>اختر عدد الأسئلة:</label>
+            <select id="q-count" onchange="checkShuffle()" style="width: 100%; padding: 12px; border-radius: 8px;">
+                <option value="25">25 سؤال</option>
+                <option value="50">50 سؤال</option>
+                <option value="75">75 سؤال</option>
+                <option value="100">100 سؤال</option>
+            </select>
+        </div>
+        <div id="shuffle-container" class="hidden" style="margin-bottom: 15px;">
+            <input type="checkbox" id="q-shuffle"> ترتيب عشوائي للكل
+        </div>
+        <button class="btn-primary" onclick="startQuiz()">ابدأ امتحان جديد</button>
+        <button class="btn-outline" onclick="showHistory()">سجل الامتحانات</button>
+    </div>
+
+    <div id="quiz-view" class="hidden">
+        <header class="card">
+            <div id="timer" style="font-family: monospace; font-weight: bold; font-size: 1.2rem;">00:00:00</div>
+            <div id="progress">سؤال 1</div>
+            <button onclick="finishQuiz()" style="background:var(--success); color:white; border:none; padding:8px 15px; border-radius:5px; cursor:pointer;">تسليم</button>
+        </header>
+        <div id="questions-list" style="margin-top: 20px;"></div>
+    </div>
+
+    <div id="result-view" class="hidden">
+        <div class="card fade-in" style="text-align: center; border-right: none;">
+            <h2 id="final-score" style="font-size: 3rem; color: var(--primary); margin: 0;">0 / 0</h2>
+            <p id="result-msg" style="font-weight: bold;"></p>
+            <button class="btn-primary" style="max-width: 250px;" onclick="clearActiveAndReload()">امتحان جديد</button>
+        </div>
+        <div id="review-list"></div>
+    </div>
+    <div id="stats-section" class="card hidden fade-in">
+    <h3>تحليل الأداء 📊</h3>
+    <canvas id="performanceChart"></canvas>
+    <div id="time-stats" style="margin-top: 15px; font-weight: bold; color: var(--primary); text-align: center;"></div>
+</div>
+</div>
+
+<div id="history-modal" onclick="if(event.target==this) closeHistory()">
+    <div class="modal-content card">
+        <h3>السجل السابق</h3>
+        <div id="history-list" style="max-height: 400px; overflow-y: auto;"></div>
+        <button class="btn-outline" onclick="closeHistory()">إغلاق</button>
+    </div>
+</div>
+
+<script>
+let allData = [];
+let currentQuiz = [];
+let userAnswers = {};
+let timer;
+let timeLeft;
+
+// 1. تشغيل وتحميل البيانات
+async function init() {
+    try {
+        const res = await fetch('Questions.json');
+        const data = await res.json();
+        allData = data.questions;
+    } catch(e) { alert("تأكد من وجود ملف Questions.json"); }
+    
+    if(localStorage.getItem('theme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+
+    const active = localStorage.getItem('active_quiz_v4');
+    if(active) {
+        if(confirm("وجدنا امتحاناً لم يكتمل، هل تود العودة إليه؟")) {
+            resumeQuiz(JSON.parse(active));
+            return;
+        } else { localStorage.removeItem('active_quiz_v4'); }
+    }
+}
+
+function checkShuffle() {
+    const count = document.getElementById('q-count').value;
+    document.getElementById('shuffle-container').classList.toggle('hidden', count !== '100');
+}
+
+// 2. بدء الامتحان
+function startQuiz() {
+    const count = parseInt(document.getElementById('q-count').value);
+    const shuffle = document.getElementById('q-shuffle').checked;
+    let pool = [...allData];
+    if (count < 100 || shuffle) pool.sort(() => Math.random() - 0.5);
+    
+    currentQuiz = pool.slice(0, count);
+    userAnswers = {};
+    timeLeft = 120 * 60;
+    renderAndStart();
+}
+
+function resumeQuiz(data) {
+    currentQuiz = data.quiz;
+    userAnswers = data.answers || {};
+    timeLeft = data.timeLeft;
+    renderAndStart();
+}
+
+function renderAndStart() {
+    document.getElementById('setup-view').classList.add('hidden');
+    document.getElementById('quiz-view').classList.remove('hidden');
+    renderQuestions();
+    startTimer();
+}
+
+// 3. عرض الأسئلة مع تأثير Fade-in
+function renderQuestions() {
+    const container = document.getElementById('questions-list');
+    container.innerHTML = '';
+    currentQuiz.forEach((q, i) => {
+        const card = document.createElement('div');
+        card.id = `card-${i}`;
+        card.className = `card fade-in ${userAnswers[i] ? 'is-answered' : ''}`;
+        card.style.animationDelay = `${i * 0.1}s`; // تأثير الظهور المتتابع
+        
+        card.innerHTML = `
+            <p><b>${i+1}.</b> ${q.question}</p>
+            ${q.choices.map(c => `
+                <label class="choice-item">
+                    <input type="radio" name="q${i}" value="${c.key}" 
+                    ${userAnswers[i] === c.key ? 'checked' : ''} 
+                    onchange="markAnswered(${i}, '${c.key}')">
+                    ${c.key}: ${c.text}
+                </label>
+            `).join('')}
+        `;
+        container.appendChild(card);
+    });
+}
+
+function markAnswered(idx, key) {
+    userAnswers[idx] = key;
+    document.getElementById(`card-${idx}`).classList.add('is-answered');
+    document.getElementById('progress').innerText = `سؤال ${idx + 1} من ${currentQuiz.length}`;
+    saveProgress();
+}
+
+// 4. الحفظ التلقائي والسجل
+function saveProgress() {
+    localStorage.setItem('active_quiz_v4', JSON.stringify({
+        quiz: currentQuiz, answers: userAnswers, timeLeft: timeLeft
+    }));
+}
+
+function finishQuiz() {
+    clearInterval(timer);
+    localStorage.removeItem('active_quiz_v4');
+    
+    let score = 0;
+    currentQuiz.forEach((q, i) => { if(userAnswers[i] === q.correctAnswer) score++; });
+
+    saveToHistory(score, currentQuiz.length);
+    showResults(score);
+}
+
+// دالة عرض النتائج المحدثة
+function showResults(score) {
+    document.getElementById('quiz-view').classList.add('hidden');
+    document.getElementById('setup-view').classList.add('hidden'); // تأكيد إخفاء واجهة الإعداد
+    document.getElementById('result-view').classList.remove('hidden');
+    document.getElementById('stats-section').classList.remove('hidden'); 
+    
+    document.getElementById('final-score').innerText = `${score} / ${currentQuiz.length}`;
+    
+    updateChart(); // تحديث الرسم البياني
+    renderReview(); // عرض الأسئلة (الميزة التي كانت ناقصة)
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function renderReview() {
+    const review = document.getElementById('review-list');
+    review.innerHTML = '<h3 class="fade-in" style="margin-top:30px;">مراجعة الأسئلة 📝</h3>';
+    
+    currentQuiz.forEach((q, i) => {
+        const isCorrect = userAnswers[i] === q.correctAnswer;
+        const card = document.createElement('div');
+        card.className = `card fade-in ${isCorrect ? 'correct' : 'wrong'}`;
+        card.style.animationDelay = `${i * 0.05}s`;
+        
+        card.innerHTML = `
+            <p><b>السؤال ${i + 1}:</b> ${q.question}</p>
+            <p style="margin-bottom:5px;">
+                <b>إجابتك:</b> <span style="color:${isCorrect ? 'var(--success)' : 'var(--danger)'}">
+                    ${userAnswers[i] || 'لم يتم الإجابة'}
+                </span>
+            </p>
+            ${!isCorrect ? `<p><b>الإجابة الصحيحة:</b> <span style="color:var(--success)">${q.correctAnswer}</span></p>` : ''}
+        `;
+        review.appendChild(card);
+    });
+}
+
+// دالة رسم المنحنى البياني
+function updateChart() {
+    const history = JSON.parse(localStorage.getItem('quiz_history_v4') || '[]');
+    if (history.length === 0) return;
+
+    // تجهيز البيانات (آخر 10 امتحانات مثلاً)
+    const lastExams = history.slice(0, 10).reverse();
+    const labels = lastExams.map(h => h.date.split(',')[0]); // التاريخ فقط
+    const scores = lastExams.map(h => (h.score / h.total) * 100);
+
+    const ctx = document.getElementById('performanceChart').getContext('2d');
+    
+    // إذا كان هناك رسم قديم نقوم بمسحه لإنشاء جديد
+    if (window.myChart) window.myChart.destroy();
+
+    window.myChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'مستوى الأداء %',
+                data: scores,
+                borderColor: '#2563eb',
+                backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                fill: true,
+                tension: 0.4 // لجعل المنحنى ناعم
+            }]
+        },
+        options: {
+            scales: { y: { beginAtZero: true, max: 100 } }
+        }
+    });
+
+    // حساب متوسط الوقت لكل سؤال
+    // ملاحظة: نحتاج لحساب الوقت المستهلك (الوقت الأصلي - الوقت المتبقي)
+    const totalTimeSpent = (120 * 60) - timeLeft;
+    const avgPerQuestion = (totalTimeSpent / currentQuiz.length).toFixed(1);
+    document.getElementById('time-stats').innerText = `⏱️ متوسط وقت حل السؤال في هذا الامتحان: ${avgPerQuestion} ثانية`;
+}
+
+function saveToHistory(score, total) {
+    const history = JSON.parse(localStorage.getItem('quiz_history_v4') || '[]');
+    const timeSpent = (120 * 60) - timeLeft; // حساب الوقت الذي استغرقه الطالب
+    
+    history.unshift({ 
+        id: Date.now(), 
+        date: new Date().toLocaleString('ar-EG'), 
+        score, 
+        total, 
+        quiz: currentQuiz, 
+        answers: userAnswers,
+        timeSpent: timeSpent 
+    });
+    localStorage.setItem('quiz_history_v4', JSON.stringify(history));
+}
+
+function showHistory() {
+    const history = JSON.parse(localStorage.getItem('quiz_history_v4') || '[]');
+    document.getElementById('history-modal').style.display = 'flex';
+    document.getElementById('history-list').innerHTML = history.map(h => `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:15px; border-bottom:1px solid var(--border);">
+            <div onclick="viewOld(${h.id})" style="cursor:pointer; flex-grow:1;">
+                <b>${h.date}</b> <br> <small>النتيجة: ${h.score}/${h.total}</small>
+            </div>
+            <button onclick="deleteEntry(${h.id})" style="background:none; border:none; color:var(--danger); cursor:pointer; font-size:1.2rem;">🗑️</button>
+        </div>
+    `).join('') || 'السجل فارغ.';
+}
+
+function viewOld(id) {
+    const history = JSON.parse(localStorage.getItem('quiz_history_v4') || '[]');
+    const h = history.find(item => item.id === id);
+    
+    if (h) {
+        userAnswers = h.answers;
+        currentQuiz = h.quiz;
+        // ملاحظة: نقوم بتحديث الوقت المتبقي ليكون 0 في العرض القديم لكي لا يتأثر حساب متوسط الوقت
+        timeLeft = (120 * 60) - (h.timeSpent || 0); 
+        
+        closeHistory();
+        showResults(h.score);
+    }
+}
+
+function deleteEntry(id) {
+    let history = JSON.parse(localStorage.getItem('quiz_history_v4')).filter(h => h.id !== id);
+    localStorage.setItem('quiz_history_v4', JSON.stringify(history));
+    showHistory();
+}
+
+function startTimer() {
+    timer = setInterval(() => {
+        timeLeft--;
+        if(timeLeft % 5 === 0) saveProgress();
+        const h = Math.floor(timeLeft/3600), m = Math.floor((timeLeft%3600)/60), s = timeLeft%60;
+        document.getElementById('timer').innerText = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+        if(timeLeft <= 0) finishQuiz();
+    }, 1000);
+}
+
+function toggleTheme() {
+    const t = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+    localStorage.setItem('theme', t);
+}
+
+function closeHistory() { document.getElementById('history-modal').style.display = 'none'; }
+function clearActiveAndReload() {
+    localStorage.removeItem('active_quiz_v4');
+    // إخفاء كل شيء وإظهار واجهة البداية
+    document.getElementById('result-view').classList.add('hidden');
+    document.getElementById('stats-section').classList.add('hidden');
+    document.getElementById('setup-view').classList.remove('hidden');
+    window.location.reload(); 
+}
+init();
+</script>
+</body>
+</html>
